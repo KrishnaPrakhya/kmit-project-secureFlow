@@ -14,7 +14,7 @@ function Header() {
   const navLinks = [
     { href: "/home", label: "Home" },
     { href: "/gradationalRedaction", label: "Gradational Redaction" },
-    { href: "/manualRedaction", label: "Manual Files" },
+    { href: "/promptRedaction", label: "Prompt Redaction" },
     { href: "/unet", label: "Financial Redaction" },
     { href: "/recentFiles", label: "Recent Files" },
     // { href: "/chatbot", label: "Chat Bot" },

@@ -1296,10 +1296,13 @@ def apply_manual_pdf_redactions():
                 
                 # The frontend sends coordinates scaled to PDF dimensions but in canvas coordinate system
                 # Canvas: Y=0 at top, PDF: Y=0 at bottom, so we need to flip Y
+                # BUT: Let's test if the coordinate system is actually flipped
                 pdf_x0 = x
-                pdf_y0 = page_height - y - height  # Convert from top-origin to bottom-origin
+                pdf_y0 = y  # Try direct mapping first
                 pdf_x1 = x + width
-                pdf_y1 = page_height - y  # Top of rectangle in PDF coordinates
+                pdf_y1 = y + height  # Direct mapping
+                
+                print(f"    Direct mapping PDF coords: ({pdf_x0}, {pdf_y0}) to ({pdf_x1}, {pdf_y1})")
                 
                 print(f"    PDF coords: ({pdf_x0}, {pdf_y0}) to ({pdf_x1}, {pdf_y1})")
                 

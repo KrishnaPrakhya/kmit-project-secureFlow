@@ -8,7 +8,8 @@ pytesseract
 google-generativeai
 gliner
 numpy
-Pillow
+Pillow==9.5.0
+easyocr
 
 # New dependencies for prompt-based redaction
 langchain==0.1.0

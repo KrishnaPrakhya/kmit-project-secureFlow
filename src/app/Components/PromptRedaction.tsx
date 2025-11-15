@@ -28,6 +28,8 @@ import {
   Info,
   Shield,
   Lock,
+  Mic,
+  MicOff,
 } from "lucide-react";
 import axios from "axios";
 
@@ -73,7 +75,15 @@ const PromptRedaction: React.FC = () => {
   const [timestamp, setTimestamp] = useState(Date.now());
   const [confidenceThreshold, setConfidenceThreshold] = useState<number>(0.9); // Only high confidence by default
 
+  // Voice input states
+  const [isListening, setIsListening] = useState(false);
+  const [isVoiceSupported, setIsVoiceSupported] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [networkRetryCount, setNetworkRetryCount] = useState(0);
+  const [lastNetworkError, setLastNetworkError] = useState<number>(0);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   // Generate live preview whenever entities change
   useEffect(() => {
@@ -92,6 +102,223 @@ const PromptRedaction: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [redactionPlan, autoRedact]);
+
+  // Voice recognition setup
+  useEffect(() => {
+    // Check if speech recognition is supported
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setIsVoiceSupported(true);
+      recognitionRef.current = new SpeechRecognition();
+      setupVoiceRecognition();
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  const setupVoiceRecognition = () => {
+    if (!recognitionRef.current) return;
+
+    const recognition = recognitionRef.current;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    // Add additional settings for better reliability
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      console.log("Voice recognition started");
+      setIsListening(true);
+      // Reset retry count on successful start
+      setNetworkRetryCount(0);
+      setError(null);
+    };
+
+    recognition.onend = () => {
+      console.log("Voice recognition ended");
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      setIsListening(false);
+
+      // Handle different types of errors
+      let errorMessage = "Voice recognition error. Please try again.";
+
+      let shouldRetry = false;
+
+      switch (event.error) {
+        case "network":
+          const now = Date.now();
+          const timeSinceLastError = now - lastNetworkError;
+
+          // Only retry if it's been more than 10 seconds since last network error
+          if (timeSinceLastError > 10000 && networkRetryCount < 2) {
+            shouldRetry = true;
+            setNetworkRetryCount((prev) => prev + 1);
+            setLastNetworkError(now);
+            errorMessage = `Network connection issue. Retrying... (${
+              networkRetryCount + 1
+            }/3)`;
+
+            // Auto-retry after 2 seconds
+            setTimeout(() => {
+              if (recognitionRef.current && !isListening) {
+                try {
+                  recognitionRef.current.start();
+                } catch (retryError) {
+                  console.error("Retry failed:", retryError);
+                }
+              }
+            }, 2000);
+          } else {
+            setNetworkRetryCount(0);
+            errorMessage =
+              "Network error: Speech recognition requires a stable internet connection. Please check your connection and try again manually.";
+          }
+          break;
+        case "not-allowed":
+          errorMessage =
+            "Microphone access denied. Please allow microphone permissions and refresh the page.";
+          break;
+        case "no-speech":
+          // Don't show error for no-speech, just reset
+          return;
+        case "audio-capture":
+          errorMessage =
+            "Microphone not found. Please check your microphone and try again.";
+          break;
+        case "service-not-allowed":
+          errorMessage =
+            "Speech recognition service not available. This may be due to browser restrictions or network policies.";
+          break;
+        case "aborted":
+          // Don't show error for manual abort
+          return;
+        default:
+          errorMessage = `Voice recognition error (${event.error}). Please try again.`;
+      }
+
+      if (!shouldRetry) {
+        setError(errorMessage);
+
+        // Auto-clear error after 8 seconds
+        setTimeout(() => {
+          setError(null);
+        }, 8000);
+      }
+    };
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = "";
+      let finalTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      // Update the intent field with the current transcript
+      const currentTranscript = intent + finalTranscript;
+      setIntent(currentTranscript);
+      setVoiceTranscript(interimTranscript);
+
+      // Check if the final transcript ends with "redact"
+      if (finalTranscript.toLowerCase().trim().endsWith("redact")) {
+        console.log('Voice command detected ending with "redact"');
+        // Stop listening
+        recognition.stop();
+        setIsListening(false);
+
+        // Trigger analysis if we have a file
+        if (file && currentTranscript.trim()) {
+          setTimeout(() => {
+            analyzeIntent();
+          }, 500);
+        }
+      }
+    };
+  };
+
+  const checkConnectivity = () => {
+    return navigator.onLine;
+  };
+
+  // Add a simple "redact" button for manual triggering
+  const handleManualRedact = () => {
+    if (file && intent.trim()) {
+      analyzeIntent();
+    } else {
+      setError("Please upload a file and enter your redaction intent first.");
+    }
+  };
+
+  const toggleVoiceInput = async () => {
+    if (!recognitionRef.current) return;
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      try {
+        // Check internet connectivity first
+        if (!checkConnectivity()) {
+          setError(
+            "No internet connection. Voice recognition requires an active internet connection."
+          );
+          return;
+        }
+
+        // Check microphone permissions first
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+            });
+            // Stop the stream immediately as we just needed to check permissions
+            stream.getTracks().forEach((track) => track.stop());
+          } catch (permissionError) {
+            setError(
+              "Microphone access denied. Please allow microphone permissions in your browser settings and refresh the page."
+            );
+            return;
+          }
+        }
+
+        // Clear any previous errors
+        setError(null);
+
+        // Start recognition
+        recognitionRef.current.start();
+      } catch (error: any) {
+        console.error("Error starting voice recognition:", error);
+
+        let errorMessage =
+          "Could not start voice recognition. Please try again.";
+
+        if (error.name === "InvalidStateError") {
+          errorMessage =
+            "Voice recognition is already running. Please wait and try again.";
+        } else if (error.name === "NotAllowedError") {
+          errorMessage =
+            "Microphone access denied. Please allow microphone permissions.";
+        }
+
+        setError(errorMessage);
+      }
+    }
+  };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -416,14 +643,95 @@ const PromptRedaction: React.FC = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div>
+                  <div className="relative">
                     <textarea
-                      value={intent}
+                      value={
+                        intent + (voiceTranscript ? ` ${voiceTranscript}` : "")
+                      }
                       onChange={(e) => setIntent(e.target.value)}
-                      placeholder="Example: Remove all personal information and contact details but keep job titles and company names..."
-                      className="w-full h-32 p-3 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                      placeholder="Example: Remove all personal information and contact details but keep job titles and company names... (or use voice input)"
+                      className="w-full h-32 p-3 pr-12 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
                     />
+
+                    {/* Voice Input Button */}
+                    {isVoiceSupported && (
+                      <button
+                        onClick={toggleVoiceInput}
+                        disabled={!file}
+                        className={`absolute top-3 right-3 p-2 rounded-lg transition-all duration-200 ${
+                          isListening
+                            ? "bg-red-100 text-red-600 hover:bg-red-200 animate-pulse"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        } ${!file ? "opacity-50 cursor-not-allowed" : ""}`}
+                        title={
+                          isListening
+                            ? "Stop voice input"
+                            : 'Start voice input (say "redact" to auto-analyze)'
+                        }
+                      >
+                        {isListening ? (
+                          <MicOff className="w-5 h-5" />
+                        ) : (
+                          <Mic className="w-5 h-5" />
+                        )}
+                      </button>
+                    )}
+
+                    {/* Voice status indicator */}
+                    {isListening && (
+                      <div className="absolute bottom-3 right-3 flex items-center gap-2 bg-red-50 text-red-600 px-2 py-1 rounded-full text-xs font-medium">
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                        Listening... (say "redact" to analyze)
+                      </div>
+                    )}
                   </div>
+
+                  {/* Voice Input Instructions */}
+                  {isVoiceSupported && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Mic className="w-4 h-4 text-blue-600" />
+                        <span className="text-sm font-medium text-blue-700">
+                          Voice Input
+                        </span>
+                      </div>
+                      <p className="text-xs text-blue-600 mb-2">
+                        Click the microphone button and speak your redaction
+                        intent. End with "redact" to automatically analyze.
+                      </p>
+                      <div className="text-xs text-blue-600 mb-2">
+                        <strong>Example:</strong> "Remove all personal
+                        information and phone numbers redact"
+                      </div>
+                      <div className="text-xs text-blue-500 bg-blue-100 rounded px-2 py-1">
+                        <strong>Note:</strong> Voice recognition requires
+                        internet connection and microphone permissions.
+                      </div>
+                      {networkRetryCount > 0 && (
+                        <div className="text-xs text-orange-600 bg-orange-50 rounded px-2 py-1 mt-1">
+                          <strong>Tip:</strong> If voice keeps failing, try
+                          typing your intent and clicking "Analyze with AI"
+                          instead.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Voice not supported message */}
+                  {!isVoiceSupported && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <AlertCircle className="w-4 h-4 text-yellow-600" />
+                        <span className="text-sm font-medium text-yellow-700">
+                          Voice Input Not Available
+                        </span>
+                      </div>
+                      <p className="text-xs text-yellow-600">
+                        Voice recognition is not supported in your browser.
+                        Please use Chrome, Edge, or Safari for voice features.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Quick Intents */}
                   <div>
@@ -519,24 +827,40 @@ const PromptRedaction: React.FC = () => {
                     </p>
                   </div>
 
-                  <Button
-                    onClick={analyzeIntent}
-                    disabled={!file || !intent.trim() || isAnalyzing}
-                    className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700"
-                    size="lg"
-                  >
-                    {isAnalyzing ? (
-                      <>
-                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                        AI is analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-5 h-5 mr-2" />
-                        Analyze with AI
-                      </>
+                  <div className="space-y-2">
+                    <Button
+                      onClick={analyzeIntent}
+                      disabled={!file || !intent.trim() || isAnalyzing}
+                      className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700"
+                      size="lg"
+                    >
+                      {isAnalyzing ? (
+                        <>
+                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                          AI is analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-5 h-5 mr-2" />
+                          Analyze with AI
+                        </>
+                      )}
+                    </Button>
+
+                    {/* Manual Redact Button - Alternative to voice */}
+                    {intent.trim() && file && (
+                      <Button
+                        onClick={handleManualRedact}
+                        disabled={isAnalyzing}
+                        variant="outline"
+                        className="w-full border-purple-300 text-purple-700 hover:bg-purple-50"
+                        size="sm"
+                      >
+                        <Zap className="w-4 h-4 mr-2" />
+                        Quick Redact (Alternative to Voice)
+                      </Button>
                     )}
-                  </Button>
+                  </div>
                 </CardContent>
               </Card>
 

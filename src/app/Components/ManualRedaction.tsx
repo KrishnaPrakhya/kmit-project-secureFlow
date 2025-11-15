@@ -738,7 +738,8 @@ const ManualRedaction: React.FC<ManualRedactionProps> = ({
     const canvasHeight = canvas.height;
 
     console.log("About to calculate scale factors...");
-    // Calculate scale factors (canvas to PDF coordinates)
+    // Calculate scale factors (canvas to ORIGINAL PDF coordinates)
+    // Canvas is rendered at 1.5x, so we need to convert back to 1.0x
     const scaleX = pdfPageWidth / canvasWidth;
     const scaleY = pdfPageHeight / canvasHeight;
 
@@ -768,20 +769,14 @@ const ManualRedaction: React.FC<ManualRedactionProps> = ({
         redactionsByPage[pageNum] = [];
       }
 
-      // Convert canvas coordinates to PDF coordinates
-      // Note: redaction coordinates are already adjusted for zoom in getMousePos
-      // We need to convert them back to actual canvas coordinates, then to PDF coordinates
-      const actualCanvasX = redaction.x * zoom;
-      const actualCanvasY = redaction.y * zoom;
-      const actualCanvasWidth = (redaction.width || 0) * zoom;
-      const actualCanvasHeight = (redaction.height || 0) * zoom;
-
+      // Convert canvas coordinates (top-left origin, scaled 1.5x) 
+      // to PDF coordinates (bottom-left origin, scale 1.0x)
       const convertedRedaction = {
         ...redaction,
-        x: actualCanvasX * scaleX,
-        y: actualCanvasY * scaleY,
-        width: actualCanvasWidth * scaleX,
-        height: actualCanvasHeight * scaleY,
+        x: redaction.x * scaleX,
+        y: redaction.y * scaleY,
+        width: (redaction.width || 0) * scaleX,
+        height: (redaction.height || 0) * scaleY,
       };
 
       console.log(`Redaction on page ${pageNum}:`, {
@@ -797,13 +792,8 @@ const ManualRedaction: React.FC<ManualRedactionProps> = ({
           w: convertedRedaction.width,
           h: convertedRedaction.height,
         },
-        actualCanvas: {
-          x: actualCanvasX,
-          y: actualCanvasY,
-          w: actualCanvasWidth,
-          h: actualCanvasHeight,
-        },
-        factors: { scaleX, scaleY, zoom },
+        pdfDimensions: { w: pdfPageWidth, h: pdfPageHeight },
+        factors: { scaleX, scaleY },
       });
 
       redactionsByPage[pageNum].push(convertedRedaction);
