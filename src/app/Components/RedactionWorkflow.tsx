@@ -18,6 +18,8 @@ import {
   FileText,
   CheckCircle2,
   AlertCircle,
+  Download,
+  Eye,
 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch, RootState } from "@/redux/store";
@@ -25,17 +27,20 @@ import EntitySelect from "./EntitySelect";
 import { RedactionLevel1 } from "./RedactionLevel1";
 
 // Load ManualRedaction component only on client-side
-const ManualRedaction = dynamic(() => import("./ManualRedaction"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center p-8">
-      <div className="text-center">
-        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading manual redaction...</p>
+const EnhancedManualRedaction = dynamic(
+  () => import("./EnhancedManualRedaction"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center p-8">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading manual redaction...</p>
+        </div>
       </div>
-    </div>
-  ),
-});
+    ),
+  }
+);
 
 interface RedactionWorkflowProps {
   file: File | null;
@@ -435,8 +440,10 @@ const RedactionWorkflow: React.FC<RedactionWorkflowProps> = ({ file }) => {
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.3 }}
           >
-            <ManualRedaction
-              {...({ file, automatedRedactionComplete: automatedComplete, onComplete: handleManualComplete } as any)}
+            <EnhancedManualRedaction
+              file={file}
+              automatedRedactionComplete={automatedComplete}
+              onComplete={handleManualComplete}
             />
 
             <div className="flex justify-between mt-6">
@@ -468,53 +475,140 @@ const RedactionWorkflow: React.FC<RedactionWorkflowProps> = ({ file }) => {
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.3 }}
           >
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="w-6 h-6 text-green-500" />
-                  Redaction Complete
+            <Card className="overflow-hidden">
+              <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-500 text-white">
+                <CardTitle className="flex items-center gap-2 text-2xl">
+                  <CheckCircle2 className="w-8 h-8" />
+                  Redaction Complete!
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  <div className="bg-gradient-to-r from-green-50 to-blue-50 p-8 rounded-lg text-center">
-                    <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                    <h2 className="text-2xl font-bold mb-2">
+              <CardContent className="p-0">
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-8">
+                  <div className="text-center mb-8">
+                    <div className="inline-flex items-center justify-center w-20 h-20 bg-green-500 rounded-full mb-4 shadow-lg">
+                      <CheckCircle2 className="w-12 h-12 text-white" />
+                    </div>
+                    <h2 className="text-3xl font-bold mb-2 text-gray-800">
                       Successfully Redacted!
                     </h2>
-                    <p className="text-gray-600 mb-6">
-                      Your document has been processed and is ready for download
+                    <p className="text-gray-600 text-lg">
+                      Your document has been securely processed and is ready for
+                      download
                     </p>
+                  </div>
 
-                    <div className="grid md:grid-cols-3 gap-4 mb-6">
-                      <div className="bg-white p-4 rounded-lg shadow">
+                  {/* Stats Grid */}
+                  <div className="grid md:grid-cols-3 gap-4 mb-8">
+                    <motion.div
+                      whileHover={{ scale: 1.05 }}
+                      className="bg-white p-6 rounded-xl shadow-md border border-green-100"
+                    >
+                      <div className="flex items-center justify-between mb-2">
                         <p className="text-sm text-gray-600">Method Used</p>
-                        <p className="text-lg font-semibold capitalize">
-                          {redactionMode}
-                        </p>
+                        <Wand2 className="w-5 h-5 text-green-500" />
                       </div>
-                      <div className="bg-white p-4 rounded-lg shadow">
+                      <p className="text-2xl font-bold capitalize text-gray-800">
+                        {redactionMode}
+                      </p>
+                    </motion.div>
+                    <motion.div
+                      whileHover={{ scale: 1.05 }}
+                      className="bg-white p-6 rounded-xl shadow-md border border-blue-100"
+                    >
+                      <div className="flex items-center justify-between mb-2">
                         <p className="text-sm text-gray-600">Automated</p>
-                        <p className="text-lg font-semibold">
-                          {automatedComplete ? "Yes" : "No"}
-                        </p>
+                        <Wand2 className="w-5 h-5 text-blue-500" />
                       </div>
-                      <div className="bg-white p-4 rounded-lg shadow">
+                      <p className="text-2xl font-bold text-gray-800">
+                        {automatedComplete ? "✓ Yes" : "✗ No"}
+                      </p>
+                    </motion.div>
+                    <motion.div
+                      whileHover={{ scale: 1.05 }}
+                      className="bg-white p-6 rounded-xl shadow-md border border-purple-100"
+                    >
+                      <div className="flex items-center justify-between mb-2">
                         <p className="text-sm text-gray-600">Manual Edits</p>
-                        <p className="text-lg font-semibold">
-                          {manualComplete ? "Yes" : "No"}
-                        </p>
+                        <Hand className="w-5 h-5 text-purple-500" />
                       </div>
-                    </div>
+                      <p className="text-2xl font-bold text-gray-800">
+                        {manualComplete ? "✓ Yes" : "✗ No"}
+                      </p>
+                    </motion.div>
+                  </div>
 
-                    <div className="flex gap-4 justify-center">
-                      <Button size="lg" onClick={handleStartOver}>
-                        Redact Another File
-                      </Button>
-                      <Button size="lg" variant="outline">
-                        View in Dashboard
-                      </Button>
-                    </div>
+                  {/* Download Preview */}
+                  <Card className="mb-6 overflow-hidden">
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-800">
+                          Preview Redacted Document
+                        </h3>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const url =
+                              file?.type === "application/pdf"
+                                ? "/redacted_document.pdf"
+                                : "/redacted_image.jpg";
+                            window.open(url, "_blank");
+                          }}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Full
+                        </Button>
+                      </div>
+                      <div className="bg-gray-100 rounded-lg p-4 border border-gray-200">
+                        {file?.type === "application/pdf" ? (
+                          <iframe
+                            src={`/redacted_document.pdf?t=${Date.now()}`}
+                            className="w-full h-64 rounded"
+                          />
+                        ) : (
+                          <img
+                            src={`/redacted_image.jpg?t=${Date.now()}`}
+                            alt="Redacted Preview"
+                            className="w-full h-64 object-contain rounded"
+                          />
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                    <Button
+                      size="lg"
+                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white shadow-lg"
+                      onClick={() => {
+                        const url =
+                          file?.type === "application/pdf"
+                            ? "/api/downloadRedactedFile?type=pdf"
+                            : "/api/downloadRedactedFile?type=image";
+                        window.location.href = url;
+                      }}
+                    >
+                      <Download className="w-5 h-5 mr-2" />
+                      Download Redacted File
+                    </Button>
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      onClick={handleStartOver}
+                      className="border-2"
+                    >
+                      <ArrowLeft className="w-5 h-5 mr-2" />
+                      Redact Another File
+                    </Button>
+                  </div>
+
+                  {/* Additional Info */}
+                  <div className="mt-6 text-center text-sm text-gray-600">
+                    <p className="flex items-center justify-center gap-2">
+                      <AlertCircle className="w-4 h-4" />
+                      Your redacted document is secure and ready to share
+                    </p>
                   </div>
                 </div>
               </CardContent>

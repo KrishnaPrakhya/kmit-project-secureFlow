@@ -574,7 +574,21 @@ def process_image_redaction(file, entities, redact_type):
         redacted_image = redact_matching_text(image, text_boxes, entities, redact_type)
         
         output_path = os.path.join(UPLOAD_FOLDER, "redacted_image.jpg")
-        cv2.imwrite(output_path, redacted_image)
+        
+        # Remove existing file first
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        
+        success = cv2.imwrite(output_path, redacted_image)
+        if not success:
+            raise Exception("Failed to write redacted image")
+        
+        # Verify file was written
+        if not os.path.exists(output_path):
+            raise Exception("Redacted image file was not created")
+        
+        file_size = os.path.getsize(output_path)
+        print(f"Automated redaction saved: {output_path}, size: {file_size} bytes")
         
         return output_path
 
@@ -1137,18 +1151,255 @@ def serve_redacted_image():
     try:
         file_path = os.path.join(UPLOAD_FOLDER, 'redacted_image.jpg')
         if not os.path.exists(file_path):
+            print(f"Redacted image not found at: {file_path}")
             return jsonify({"error": "Redacted image not found"}), 404
-        return send_from_directory(
+        
+        file_size = os.path.getsize(file_path)
+        print(f"Serving redacted image: {file_path}, size: {file_size} bytes")
+        
+        response = send_from_directory(
             UPLOAD_FOLDER,
             'redacted_image.jpg',
             mimetype='image/jpeg'
         )
+        
+        # Add cache-busting headers
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        
+        return response
     except Exception as e:
         print(f"Error serving image: {str(e)}")
         return jsonify({"error": f"Error serving image: {str(e)}"}), 500
 
 
 # ==================== END PROMPT-BASED REDACTION ====================
+
+@app.route('/api/updateRedactedFile', methods=['POST'])
+def update_redacted_file():
+    """Update the redacted file after manual enhancement"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+        
+        file = request.files['file']
+        filename = file.filename
+        
+        # Determine the output filename based on file type
+        if filename.endswith('.pdf') or 'pdf' in filename.lower():
+            output_filename = 'redacted_document.pdf'
+        else:
+            output_filename = 'redacted_image.jpg'
+        
+        output_path = os.path.join(UPLOAD_FOLDER, output_filename)
+        
+        # Remove existing file first to ensure clean write
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        
+        # Save the file
+        file.save(output_path)
+        
+        # Ensure file is fully written by checking its existence and size
+        if not os.path.exists(output_path):
+            raise Exception("File was not saved properly")
+        
+        file_size = os.path.getsize(output_path)
+        if file_size == 0:
+            raise Exception("Saved file is empty")
+        
+        print(f"Successfully updated {output_filename} with size {file_size} bytes")
+        
+        return jsonify({
+            "message": "Redacted file updated successfully",
+            "output_file": output_filename,
+            "file_path": output_path,
+            "file_size": file_size,
+            "timestamp": int(time.time())
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in update_redacted_file: {str(e)}")
+        return jsonify({
+            "error": f"Error updating redacted file: {str(e)}"
+        }), 500
+
+@app.route('/api/applyManualPDFRedactions', methods=['POST'])
+def apply_manual_pdf_redactions():
+    """
+    Apply manual redactions to PDF file
+    Receives redaction coordinates and applies them to the existing redacted PDF
+    """
+    try:
+        # Get redaction data
+        redactions_json = request.form.get('redactions')
+        total_pages = int(request.form.get('total_pages', 1))
+        is_enhancement = request.form.get('is_enhancement', 'false').lower() == 'true'
+        
+        print(f"=== Manual PDF Redaction Request ===")
+        print(f"Total pages: {total_pages}")
+        print(f"Is enhancement: {is_enhancement}")
+        print(f"Redactions JSON: {redactions_json}")
+        
+        if not redactions_json:
+            return jsonify({"error": "No redaction data provided"}), 400
+        
+        redactions_by_page = json.loads(redactions_json)
+        print(f"Redactions by page: {redactions_by_page}")
+        
+        # Path to the existing redacted PDF (from automated redaction)
+        pdf_path = os.path.join(UPLOAD_FOLDER, 'redacted_document.pdf')
+        
+        # If no automated redaction was done, use the uploaded file
+        if 'file' in request.files and not os.path.exists(pdf_path):
+            file = request.files['file']
+            file.save(pdf_path)
+        
+        if not os.path.exists(pdf_path):
+            return jsonify({"error": "PDF file not found"}), 404
+        
+        print(f"Opening PDF from: {pdf_path}")
+        
+        # Open the PDF
+        doc = fitz.open(pdf_path)
+        
+        redaction_count = 0
+        # Apply redactions to each page
+        for page_num_str, redactions_list in redactions_by_page.items():
+            page_num_frontend = int(page_num_str)  # Frontend uses 1-based indexing
+            page_num = page_num_frontend - 1  # Convert to 0-based indexing for PyMuPDF
+            
+            # Validate page number (0-based)
+            if page_num < 0 or page_num >= len(doc):
+                print(f"Skipping invalid page number: {page_num_frontend} (converted to {page_num})")
+                continue
+            
+            page = doc[page_num]
+            page_width = page.rect.width
+            page_height = page.rect.height
+            
+            print(f"Processing page {page_num_frontend} (index {page_num}): width={page_width}, height={page_height}")
+            print(f"Number of redactions on this page: {len(redactions_list)}")
+            
+            # Apply each redaction on this page
+            for idx, redaction in enumerate(redactions_list):
+                # Extract coordinates (these should already be in PDF coordinate space from frontend)
+                x = redaction.get('x', 0)
+                y = redaction.get('y', 0)
+                width = redaction.get('width', 0)
+                height = redaction.get('height', 0)
+                redaction_type = redaction.get('type', 'rectangle')
+                
+                print(f"  Redaction {idx}: type={redaction_type}, x={x}, y={y}, w={width}, h={height}")
+                print(f"  Page dimensions: {page_width} x {page_height}")
+                
+                # The frontend sends coordinates scaled to PDF dimensions but in canvas coordinate system
+                # Canvas: Y=0 at top, PDF: Y=0 at bottom, so we need to flip Y
+                pdf_x0 = x
+                pdf_y0 = page_height - y - height  # Convert from top-origin to bottom-origin
+                pdf_x1 = x + width
+                pdf_y1 = page_height - y  # Top of rectangle in PDF coordinates
+                
+                print(f"    PDF coords: ({pdf_x0}, {pdf_y0}) to ({pdf_x1}, {pdf_y1})")
+                
+                # Validate coordinates are within page bounds
+                if pdf_x0 < 0 or pdf_y0 < 0 or pdf_x1 > page_width or pdf_y1 > page_height:
+                    print(f"    WARNING: Coordinates outside page bounds!")
+                    print(f"    Page bounds: (0, 0) to ({page_width}, {page_height})")
+                
+                # Create rectangle for redaction
+                rect = fitz.Rect(pdf_x0, pdf_y0, pdf_x1, pdf_y1)
+                
+                # Add redaction annotation
+                if redaction_type == 'circle':
+                    # For circles, draw a filled circle
+                    shape = page.new_shape()
+                    center_x = (pdf_x0 + pdf_x1) / 2
+                    center_y = (pdf_y0 + pdf_y1) / 2
+                    radius = min(width, height) / 2
+                    shape.draw_circle((center_x, center_y), radius)
+                    shape.finish(color=(0, 0, 0), fill=(0, 0, 0))
+                    shape.commit()
+                    print(f"    Applied circle redaction")
+                else:
+                    # Rectangle or freehand (treat as rectangle)
+                    annot = page.add_redact_annot(rect, fill=(0, 0, 0))
+                    print(f"    Applied rectangle redaction")
+                
+                redaction_count += 1
+            
+            # Apply redactions for this page
+            print(f"Applying {len(redactions_list)} redactions to page {page_num}")
+            page.apply_redactions()
+        
+        print(f"Total redactions applied: {redaction_count}")
+        
+        # Save the updated PDF to a temporary file first
+        temp_path = os.path.join(UPLOAD_FOLDER, 'temp_redacted.pdf')
+        output_path = os.path.join(UPLOAD_FOLDER, 'redacted_document.pdf')
+        
+        print(f"Saving to temp file: {temp_path}")
+        doc.save(temp_path)
+        doc.close()
+        
+        # Replace the original with the temporary file
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        os.rename(temp_path, output_path)
+        
+        print(f"PDF saved successfully to: {output_path}")
+        print("=== Manual PDF Redaction Complete ===\n")
+        
+        return jsonify({
+            "message": "Manual redactions applied successfully",
+            "output_file": "redacted_document.pdf",
+            "file_path": output_path,
+            "redaction_count": redaction_count
+        }), 200
+        
+    except Exception as e:
+        print(f"Error applying manual PDF redactions: {str(e)}")
+        return jsonify({
+            "error": f"Error applying manual PDF redactions: {str(e)}"
+        }), 500
+
+@app.route('/api/downloadRedactedFile', methods=['GET'])
+def download_redacted_file():
+    """
+    Download the redacted file (PDF or Image)
+    Query parameter: type=pdf or type=image
+    """
+    try:
+        file_type = request.args.get('type', 'image')
+        
+        if file_type == 'pdf':
+            file_path = os.path.join(UPLOAD_FOLDER, 'redacted_document.pdf')
+            if not os.path.exists(file_path):
+                return jsonify({"error": "Redacted PDF not found"}), 404
+            return send_from_directory(
+                UPLOAD_FOLDER,
+                'redacted_document.pdf',
+                as_attachment=True,
+                download_name='redacted_document.pdf',
+                mimetype='application/pdf'
+            )
+        elif file_type == 'image':
+            file_path = os.path.join(UPLOAD_FOLDER, 'redacted_image.jpg')
+            if not os.path.exists(file_path):
+                return jsonify({"error": "Redacted image not found"}), 404
+            return send_from_directory(
+                UPLOAD_FOLDER,
+                'redacted_image.jpg',
+                as_attachment=True,
+                download_name='redacted_image.jpg',
+                mimetype='image/jpeg'
+            )
+        else:
+            return jsonify({"error": "Invalid file type"}), 400
+    except Exception as e:
+        print(f"Error downloading file: {str(e)}")
+        return jsonify({"error": f"Error downloading file: {str(e)}"}), 500
 
 
 

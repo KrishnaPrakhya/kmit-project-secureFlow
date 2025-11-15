@@ -25,6 +25,7 @@ const DocumentViewer = React.memo(
     }, [redactStatus]);
 
     const getRedactedUrl = (path: string) => {
+      console.log(`${path}?t=${timestamp}`)
       return `${path}?t=${timestamp}`;
     };
 
