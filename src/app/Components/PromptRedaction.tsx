@@ -470,7 +470,12 @@ const PromptRedaction: React.FC = () => {
                   {/* Confidence Threshold Selector */}
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700">
-                      Confidence Threshold: {confidenceThreshold === 0.9 ? "High (90%+)" : confidenceThreshold === 0.75 ? "Medium (75%+)" : "All (60%+)"}
+                      Confidence Threshold:{" "}
+                      {confidenceThreshold === 0.9
+                        ? "High (90%+)"
+                        : confidenceThreshold === 0.75
+                        ? "Medium (75%+)"
+                        : "All (60%+)"}
                     </label>
                     <div className="flex gap-2">
                       <button
@@ -505,9 +510,12 @@ const PromptRedaction: React.FC = () => {
                       </button>
                     </div>
                     <p className="text-xs text-gray-500">
-                      {confidenceThreshold === 0.9 && "Only entities with 90%+ confidence will be redacted"}
-                      {confidenceThreshold === 0.75 && "Entities with 75%+ confidence will be redacted"}
-                      {confidenceThreshold === 0.6 && "All detected entities (60%+) will be redacted"}
+                      {confidenceThreshold === 0.9 &&
+                        "Only entities with 90%+ confidence will be redacted"}
+                      {confidenceThreshold === 0.75 &&
+                        "Entities with 75%+ confidence will be redacted"}
+                      {confidenceThreshold === 0.6 &&
+                        "All detected entities (60%+) will be redacted"}
                     </p>
                   </div>
 
@@ -789,14 +797,18 @@ const PromptRedaction: React.FC = () => {
                         >
                           {redactionResult.file_type === "pdf" ? (
                             <iframe
-                              src={getRedactedUrl(redactionResult.redacted_file_url)}
+                              src={getRedactedUrl(
+                                redactionResult.redacted_file_url
+                              )}
                               className="w-full h-full rounded border border-gray-300"
                               title="Redacted PDF"
                               key={timestamp}
                             />
                           ) : (
                             <img
-                              src={getRedactedUrl(redactionResult.redacted_file_url)}
+                              src={getRedactedUrl(
+                                redactionResult.redacted_file_url
+                              )}
                               alt="Redacted"
                               className="max-w-full h-auto rounded border border-gray-300"
                               key={timestamp}
