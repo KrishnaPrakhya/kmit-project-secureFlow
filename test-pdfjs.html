@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test PDF.js</title>
+</head>
+<body>
+    <h1>PDF.js Test</h1>
+    <div id="status"></div>
+    <script type="module">
+        const status = document.getElementById('status');
+        
+        try {
+            status.innerHTML += '<p>Loading PDF.js...</p>';
+            
+            const pdfjsLib = await import('pdfjs-dist');
+            status.innerHTML += '<p>PDF.js loaded: ' + JSON.stringify(Object.keys(pdfjsLib)) + '</p>';
+            
+            if (pdfjsLib.GlobalWorkerOptions) {
+                status.innerHTML += '<p>GlobalWorkerOptions found</p>';
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                status.innerHTML += '<p>Worker source set</p>';
+            }
+            
+            if (pdfjsLib.getDocument) {
+                status.innerHTML += '<p>getDocument found directly</p>';
+            } else if (pdfjsLib.default?.getDocument) {
+                status.innerHTML += '<p>getDocument found in default</p>';
+            } else {
+                status.innerHTML += '<p style="color: red;">getDocument NOT found!</p>';
+            }
+            
+        } catch (error) {
+            status.innerHTML += '<p style="color: red;">Error: ' + error.message + '</p>';
+        }
+    </script>
+</body>
+</html>

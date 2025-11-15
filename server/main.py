@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request, json, send_from_directory, url_for
 from flask_cors import CORS
 import certifi
 import os
+import time
 
 os.environ.setdefault("SSL_CERT_FILE", certifi.where())
 import fitz
@@ -733,6 +734,81 @@ async def redact_entity():
             "message": "PDF redacted successfully",
             "output_file": os.path.basename(output_path)
         }), 200
+
+
+@app.route('/api/saveManualRedaction', methods=['POST'])
+def save_manual_redaction():
+    """Save manually redacted image"""
+    try:
+        if 'image' not in request.files:
+            return jsonify({"error": "No image provided"}), 400
+        
+        image_file = request.files['image']
+        redaction_count = request.form.get('redaction_count', 0)
+        
+        # Save the manually redacted image
+        timestamp = int(time.time())
+        output_filename = f"manual_redaction_{timestamp}.png"
+        output_path = os.path.join(UPLOAD_FOLDER, output_filename)
+        
+        image_file.save(output_path)
+        
+        return jsonify({
+            "message": "Manual redaction saved successfully",
+            "output_file": output_filename,
+            "redaction_count": redaction_count,
+            "file_path": output_path
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Error saving manual redaction: {str(e)}"
+        }), 500
+
+
+@app.route('/api/saveManualPDFRedaction', methods=['POST'])
+def save_manual_pdf_redaction():
+    """Save manually redacted PDF (as images for each page)"""
+    try:
+        total_pages = int(request.form.get('total_pages', 0))
+        redaction_count = request.form.get('redaction_count', 0)
+        original_filename = request.form.get('original_filename', 'document.pdf')
+        
+        if total_pages == 0:
+            return jsonify({"error": "No pages provided"}), 400
+        
+        timestamp = int(time.time())
+        output_folder = os.path.join(UPLOAD_FOLDER, f"manual_pdf_{timestamp}")
+        os.makedirs(output_folder, exist_ok=True)
+        
+        saved_pages = []
+        
+        # Save each page
+        for i in range(1, total_pages + 1):
+            page_key = f'page_{i}'
+            if page_key in request.files:
+                page_file = request.files[page_key]
+                page_filename = f"page_{i}.png"
+                page_path = os.path.join(output_folder, page_filename)
+                page_file.save(page_path)
+                saved_pages.append(page_filename)
+        
+        # Optionally: Convert images back to PDF using PIL/img2pdf
+        # For now, we'll keep them as images
+        
+        return jsonify({
+            "message": "Manual PDF redaction saved successfully",
+            "output_folder": output_folder,
+            "total_pages": len(saved_pages),
+            "redaction_count": redaction_count,
+            "saved_pages": saved_pages,
+            "original_filename": original_filename
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "error": f"Error saving manual PDF redaction: {str(e)}"
+        }), 500
         
 
 

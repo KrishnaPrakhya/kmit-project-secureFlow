@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 
 function Header() {
@@ -12,8 +12,9 @@ function Header() {
   const pathname = usePathname();
 
   const navLinks = [
-    { href: "/", label: "Home" },
+    { href: "/home", label: "Home" },
     { href: "/gradationalRedaction", label: "Gradational Redaction" },
+    { href: "/manualRedaction", label: "Manual Files" },
     { href: "/unet", label: "Financial Redaction" },
     { href: "/recentFiles", label: "Recent Files" },
     // { href: "/chatbot", label: "Chat Bot" },

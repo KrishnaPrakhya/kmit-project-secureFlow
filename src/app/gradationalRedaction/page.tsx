@@ -1,8 +1,9 @@
 "use client";
 import React, { useRef, useState, useEffect } from "react";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import RedactionConfig from "../Components/RedactionConfig";
+import RedactionWorkflow from "../Components/RedactionWorkflow";
 import { motion } from "framer-motion";
 import { useSelector, useDispatch } from "react-redux";
 import {
@@ -11,6 +12,8 @@ import {
   Upload,
   CheckCircle,
   AlertCircle,
+  Wand2,
+  Hand,
 } from "lucide-react";
 import { AppDispatch, RootState } from "@/redux/store";
 import { setEntities } from "@/features/Options/OptionsSlice";
@@ -24,6 +27,7 @@ function GradationalRedaction() {
   const [pdfRedaction, setPdfRedaction] = useState<boolean | null>(null);
   const [imageRedaction, setImageRedaction] = useState<boolean | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [useWorkflow, setUseWorkflow] = useState(false);
   const dispatch: AppDispatch = useDispatch();
 
   const uploadSuccessRef = useRef<HTMLDivElement>(null);
@@ -69,8 +73,17 @@ function GradationalRedaction() {
 
       if (response.ok) {
         const data = await response.json();
-        setShowConfigs(true);
-        dispatch(setEntities(data.entities));
+        
+        // Check if entities were detected
+        if (data.entities && data.entities.length > 0) {
+          dispatch(setEntities(data.entities));
+          setShowConfigs(true);
+        } else {
+          // No entities detected, show workflow with option to go manual
+          dispatch(setEntities([]));
+          setUseWorkflow(true);
+          setShowConfigs(true);
+        }
       }
     } catch (err) {
       console.error("Error uploading file:", err);
@@ -208,27 +221,39 @@ function GradationalRedaction() {
           )}
 
           {showConfigs && file && (
-            <div className="flex gap-4 h-[calc(100vh-200px)]">
-              <div className="w-[60%]">
-                <DocumentViewer
-                  file={file}
-                  isPDF={pdfRedaction!}
-                  progressNum={progressNum}
-                />
-              </div>
-
-              <div className="w-[40%]">
+            <>
+              {useWorkflow ? (
                 <motion.div
-                  ref={configSectionRef}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.5 }}
-                  className="rounded-xl shadow-lg overflow-y-auto h-full"
                 >
-                  <RedactionConfig File={file} />
+                  <RedactionWorkflow file={file} />
                 </motion.div>
-              </div>
-            </div>
+              ) : (
+                <div className="flex gap-4 h-[calc(100vh-200px)]">
+                  <div className="w-[60%]">
+                    <DocumentViewer
+                      file={file}
+                      isPDF={pdfRedaction!}
+                      progressNum={progressNum}
+                    />
+                  </div>
+
+                  <div className="w-[40%]">
+                    <motion.div
+                      ref={configSectionRef}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.5 }}
+                      className="rounded-xl shadow-lg overflow-y-auto h-full"
+                    >
+                      <RedactionConfig File={file} />
+                    </motion.div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </motion.div>
       </div>

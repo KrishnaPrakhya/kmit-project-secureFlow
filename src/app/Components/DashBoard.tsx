@@ -25,6 +25,13 @@ const Dashboard = () => {
       link: "/gradationalRedaction",
     },
     {
+      title: "Manual Redaction",
+      description:
+        "Precision control with drawing tools, layers, and multiple redaction styles",
+      icon: ImageIcon,
+      link: "/manualRedaction",
+    },
+    {
       title: "Smart Detection",
       description:
         "AI-powered signature and logo detection using U-Net segmentation",
@@ -43,6 +50,10 @@ const Dashboard = () => {
     {
       title: "Upload Document",
       link: "/gradationalRedaction",
+    },
+    {
+      title: "Manual Redaction",
+      link: "/manualRedaction",
     },
     {
       title: "Recent Files",
@@ -64,7 +75,7 @@ const Dashboard = () => {
         </p>
       </div>
 
-      <div className="max-w-6xl mx-auto grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+      <div className="max-w-6xl mx-auto grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
         {features.map((feature, index) => (
           <div
             key={feature.title}
@@ -99,7 +110,7 @@ const Dashboard = () => {
             <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
               {quickMap?.map((item) => (
                 <Link
                   className="flex items-center justify-between p-4 rounded-lg bg-white border border-gray-200 transition-all duration-300 hover:border-blue-500 hover:bg-blue-50 hover:shadow-md transform hover:-translate-y-0.5"

@@ -1,10 +1,5 @@
-import Header from "./Components/Header";
-import DashBoard from "./Components/DashBoard";
+import { redirect } from "next/navigation";
 
 export default async function Home() {
-  return (
-      <div className="h-screen overflow-hidden">
-        <DashBoard />
-      </div>
-  );
+  redirect("/landingPage");
 }
