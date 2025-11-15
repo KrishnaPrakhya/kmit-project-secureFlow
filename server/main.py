@@ -17,6 +17,15 @@ import mimetypes
 import numpy as np
 import shutil
 import asyncio
+
+# Import prompt-based redaction module
+from prompt_redaction import (
+    analyze_intent, 
+    refine_with_gliner, 
+    filter_by_confidence,
+    interactive_refinement
+)
+
 app = Flask(__name__)
 CORS(app)
 model = GLiNER.from_pretrained("knowledgator/gliner-multitask-large-v0.5")
@@ -809,7 +818,337 @@ def save_manual_pdf_redaction():
         return jsonify({
             "error": f"Error saving manual PDF redaction: {str(e)}"
         }), 500
+
+
+# ==================== PROMPT-BASED REDACTION ENDPOINTS ====================
+
+@app.route('/api/promptRedaction/analyze', methods=['POST'])
+def prompt_redaction_analyze():
+    """
+    Analyze document based on user's natural language intent
+    Returns entities to redact based on the user's description
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+
+        file = request.files['file']
+        user_intent = request.form.get('intent', '')
         
+        if not file or file.filename == '':
+            return jsonify({"error": "No file uploaded"}), 400
+        
+        if not user_intent:
+            return jsonify({"error": "No redaction intent provided"}), 400
+
+        # Save and extract text from file
+        temp_path = os.path.join(UPLOAD_FOLDER, file.filename)
+        file.save(temp_path)
+
+        if is_image_file(file.filename):
+            extracted_text = extract_text_from_image(temp_path)
+        elif is_pdf_file(file.filename):
+            with open(temp_path, 'rb') as f:
+                pdf_content = f.read()
+            extracted_text = extract_text_from_pdf(pdf_content)
+        else:
+            os.remove(temp_path)
+            return jsonify({"error": "Unsupported file type"}), 400
+
+        if not extracted_text:
+            os.remove(temp_path)
+            return jsonify({"error": "No text could be extracted from the file"}), 400
+
+        cleaned_text = preprocess_text(extracted_text)
+
+        # Step 1: Analyze with LLM based on user intent
+        print(f"Analyzing intent: {user_intent}")
+        redaction_plan = analyze_intent(user_intent, cleaned_text)
+        
+        # Step 2: Also run GLiNER for additional entity detection
+        gliner_entities = model.predict_entities(cleaned_text, labels, threshold=0.5)
+        
+        # Step 3: Refine the plan by combining both approaches
+        refined_plan = refine_with_gliner(redaction_plan, gliner_entities)
+        
+        # Step 4: Filter by confidence
+        min_confidence = float(request.form.get('min_confidence', 0.7))
+        final_plan = filter_by_confidence(refined_plan, min_confidence)
+
+        # Convert to response format
+        entities_response = [
+            {
+                "text": entity.text,
+                "label": entity.entity_type,
+                "reason": entity.reason,
+                "confidence": entity.confidence
+            }
+            for entity in final_plan.entities
+        ]
+
+        # Keep the file for redaction
+        return jsonify({
+            "message": "Intent analysis completed successfully",
+            "intent": user_intent,
+            "entities": entities_response,
+            "redaction_strategy": final_plan.redaction_strategy,
+            "summary": final_plan.summary,
+            "extractedText": cleaned_text,
+            "total_entities": len(entities_response)
+        }), 200
+
+    except Exception as e:
+        print(f"Error in prompt redaction analysis: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": f"Error analyzing redaction intent: {str(e)}"
+        }), 500
+
+
+@app.route('/api/promptRedaction/refine', methods=['POST'])
+def prompt_redaction_refine():
+    """
+    Refine the redaction plan based on additional user feedback
+    """
+    try:
+        current_plan_json = request.json.get('current_plan')
+        user_feedback = request.json.get('feedback', '')
+        
+        if not current_plan_json or not user_feedback:
+            return jsonify({"error": "Missing current plan or feedback"}), 400
+
+        # Parse current plan
+        from prompt_redaction import RedactionPlan
+        current_plan = RedactionPlan.model_validate(current_plan_json)
+        
+        # Refine based on feedback
+        refined_plan = interactive_refinement(current_plan, user_feedback)
+        
+        # Convert to response format
+        entities_response = [
+            {
+                "text": entity.text,
+                "label": entity.entity_type,
+                "reason": entity.reason,
+                "confidence": entity.confidence
+            }
+            for entity in refined_plan.entities
+        ]
+
+        return jsonify({
+            "message": "Plan refined successfully",
+            "entities": entities_response,
+            "redaction_strategy": refined_plan.redaction_strategy,
+            "summary": refined_plan.summary,
+            "total_entities": len(entities_response)
+        }), 200
+
+    except Exception as e:
+        print(f"Error refining redaction plan: {str(e)}")
+        return jsonify({
+            "error": f"Error refining plan: {str(e)}"
+        }), 500
+
+
+@app.route('/api/promptRedaction/preview', methods=['POST'])
+def prompt_redaction_preview():
+    """
+    Generate a preview showing what will be redacted
+    Returns highlighted entities in the text
+    """
+    try:
+        text = request.json.get('text', '')
+        entities = request.json.get('entities', [])
+        
+        if not text or not entities:
+            return jsonify({"error": "Missing text or entities"}), 400
+
+        # Create HTML preview with highlighted entities
+        highlighted_text = text
+        offset = 0
+        
+        # Sort entities by position in text
+        entities_with_pos = []
+        for entity in entities:
+            pos = text.find(entity['text'])
+            if pos != -1:
+                entities_with_pos.append({
+                    'entity': entity,
+                    'position': pos
+                })
+        
+        entities_with_pos.sort(key=lambda x: x['position'])
+        
+        # Add HTML spans around each entity
+        for item in entities_with_pos:
+            entity = item['entity']
+            pos = item['position'] + offset
+            entity_text = entity['text']
+            
+            # Color code by confidence
+            if entity['confidence'] >= 0.9:
+                color = 'rgba(239, 68, 68, 0.3)'  # red-500
+            elif entity['confidence'] >= 0.75:
+                color = 'rgba(251, 146, 60, 0.3)'  # orange-500
+            else:
+                color = 'rgba(234, 179, 8, 0.3)'  # yellow-500
+            
+            replacement = (
+                f'<span style="background-color: {color}; padding: 2px 4px; border-radius: 3px; '
+                f'cursor: help;" title="{entity["label"]} - {entity["reason"]} (Confidence: {entity["confidence"]:.0%})">'
+                f'{entity_text}</span>'
+            )
+            
+            highlighted_text = (
+                highlighted_text[:pos] + 
+                replacement + 
+                highlighted_text[pos + len(entity_text):]
+            )
+            
+            offset += len(replacement) - len(entity_text)
+
+        return jsonify({
+            "message": "Preview generated successfully",
+            "highlighted_text": highlighted_text
+        }), 200
+
+    except Exception as e:
+        print(f"Error generating preview: {str(e)}")
+        return jsonify({
+            "error": f"Error generating preview: {str(e)}"
+        }), 500
+
+
+@app.route('/api/promptRedaction/execute', methods=['POST'])
+async def prompt_redaction_execute():
+    """
+    Execute the redaction based on the finalized plan
+    Returns the redacted file in the same format as input (PDF->PDF, Image->Image)
+    """
+    try:
+        file = request.files.get('file')
+        if not file:
+            return jsonify({"error": "File not provided"}), 400
+
+        entities = json.loads(request.form.get('entities', '[]'))
+        redact_type = request.form.get('type', 'BlackOut')
+        original_filename = file.filename
+        
+        # Use existing redaction logic
+        if is_image_file(file.filename):
+            output_path = process_image_redaction(file, entities, redact_type)
+            # For images, provide the direct file path endpoint
+            redacted_url = "/redacted_image.jpg"
+            return jsonify({
+                "message": "Prompt-based image redaction completed successfully",
+                "redacted_file_url": redacted_url,
+                "output_path": output_path,
+                "file_type": "image",
+                "total_redactions": len(entities),
+                "original_filename": original_filename
+            }), 200
+            
+        elif is_pdf_file(file.filename):
+            pdf_content = file.read()
+            output_path = await process_pdf_redaction(pdf_content, entities, redact_type)
+            
+            # For PDF, provide the direct file path endpoint
+            redacted_url = "/redacted_document.pdf"
+            
+            return jsonify({
+                "message": "Prompt-based PDF redaction completed successfully",
+                "redacted_file_url": redacted_url,
+                "output_file": os.path.basename(output_path),
+                "output_path": output_path,
+                "file_type": "pdf",
+                "total_redactions": len(entities),
+                "original_filename": original_filename
+            }), 200
+        
+        else:
+            return jsonify({"error": "Unsupported file type"}), 400
+
+    except Exception as e:
+        print(f"Error executing redaction: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": f"Error executing redaction: {str(e)}"
+        }), 500
+
+
+@app.route('/api/promptRedaction/download/<file_type>', methods=['GET'])
+def download_prompt_redacted_file(file_type):
+    """
+    Download the redacted file (PDF or Image)
+    """
+    try:
+        if file_type == 'pdf':
+            file_path = os.path.join(UPLOAD_FOLDER, 'redacted_document.pdf')
+            if not os.path.exists(file_path):
+                return jsonify({"error": "Redacted PDF not found"}), 404
+            return send_from_directory(
+                UPLOAD_FOLDER,
+                'redacted_document.pdf',
+                as_attachment=True,
+                download_name='redacted_document.pdf',
+                mimetype='application/pdf'
+            )
+        elif file_type == 'image':
+            file_path = os.path.join(UPLOAD_FOLDER, 'redacted_image.jpg')
+            if not os.path.exists(file_path):
+                return jsonify({"error": "Redacted image not found"}), 404
+            return send_from_directory(
+                UPLOAD_FOLDER,
+                'redacted_image.jpg',
+                as_attachment=True,
+                download_name='redacted_image.jpg',
+                mimetype='image/jpeg'
+            )
+        else:
+            return jsonify({"error": "Invalid file type"}), 400
+    except Exception as e:
+        print(f"Error downloading file: {str(e)}")
+        return jsonify({"error": f"Error downloading file: {str(e)}"}), 500
+
+
+# Serve redacted files for viewing (not downloading)
+@app.route('/redacted_document.pdf', methods=['GET'])
+def serve_redacted_pdf():
+    """Serve the redacted PDF for viewing in browser"""
+    try:
+        file_path = os.path.join(UPLOAD_FOLDER, 'redacted_document.pdf')
+        if not os.path.exists(file_path):
+            return jsonify({"error": "Redacted PDF not found"}), 404
+        return send_from_directory(
+            UPLOAD_FOLDER,
+            'redacted_document.pdf',
+            mimetype='application/pdf'
+        )
+    except Exception as e:
+        print(f"Error serving PDF: {str(e)}")
+        return jsonify({"error": f"Error serving PDF: {str(e)}"}), 500
+
+
+@app.route('/redacted_image.jpg', methods=['GET'])
+def serve_redacted_image():
+    """Serve the redacted image for viewing in browser"""
+    try:
+        file_path = os.path.join(UPLOAD_FOLDER, 'redacted_image.jpg')
+        if not os.path.exists(file_path):
+            return jsonify({"error": "Redacted image not found"}), 404
+        return send_from_directory(
+            UPLOAD_FOLDER,
+            'redacted_image.jpg',
+            mimetype='image/jpeg'
+        )
+    except Exception as e:
+        print(f"Error serving image: {str(e)}")
+        return jsonify({"error": f"Error serving image: {str(e)}"}), 500
+
+
+# ==================== END PROMPT-BASED REDACTION ====================
 
 
 

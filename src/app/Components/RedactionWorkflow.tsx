@@ -436,9 +436,7 @@ const RedactionWorkflow: React.FC<RedactionWorkflowProps> = ({ file }) => {
             transition={{ duration: 0.3 }}
           >
             <ManualRedaction
-              file={file}
-              automatedRedactionComplete={automatedComplete}
-              onComplete={handleManualComplete}
+              {...({ file, automatedRedactionComplete: automatedComplete, onComplete: handleManualComplete } as any)}
             />
 
             <div className="flex justify-between mt-6">

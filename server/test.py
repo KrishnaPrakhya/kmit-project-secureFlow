@@ -1,36 +1,9 @@
 from gliner import GLiNER
-
-model = GLiNER.from_pretrained("knowledgator/gliner-multitask-large-v0.5")
-
+model = GLiNER.from_pretrained("knowledgator/gliner-x-small")
 text = """
-ABSTRACT 
-ON 
-MINDSCRIBE: AN EGG BASED BRAIN-TO-TEXT SYSTEM FOR 
-DECODING NEURAL SIGNALS USING DEEP LEARNING 
-Submitted to 
-DEPARTMENT 
-OF 
-COMPUTER SCIENCE AND ENGINEERING 
-By 
-Chivukula Kamal Nayan 
-Gaddam Sai Shashi Samanvith Reddy 
-Gorjana Mandala Aravind  
-Under the guidance 
-Of 
-245322733140 
-245322733142 
-245322733147 
-S. MEGHANA 
-ASSISTANT PROFESSOR, DEPARTMENT OF CSE 
-DEPARTMENT OF CSE 
-NEIL GOGTE INSTITUTE OF TECHNOLOGY 
-Kachavanisingaram Village, Hyderabad, Telangana, 500058. 
-2025-2026
+Cristiano Ronaldo dos Santos Aveiro (Portuguese pronunciation: [kɾiʃˈtjɐnu ʁɔˈnaldu]; born 5 February 1985) is a Portuguese professional footballer who plays as a forward for and captains both Saudi Pro League club Al Nassr and the Portugal national team. Widely regarded as one of the greatest players of all time, Ronaldo has won five Ballon d'Or awards,[note 3] a record three UEFA Men's Player of the Year Awards, and four European Golden Shoes, the most by a European player. He has won 33 trophies in his career, including seven league titles, five UEFA Champions Leagues, the UEFA European Championship and the UEFA Nations League. Ronaldo holds the records for most appearances (183), goals (140) and assists (42) in the Champions League, goals in the European Championship (14), international goals (128) and international appearances (205). He is one of the few players to have made over 1,200 professional career appearances, the most by an outfield player, and has scored over 850 official senior career goals for club and country, making him the top goalscorer of all time.
 """
-
-labels = ["names", "years", "numbers", "position", "places", "organizations","dates"]
-
-entities = model.predict_entities(text, labels)
-
+labels = ["person", "award", "date", "competitions", "teams"]
+entities = model.predict_entities(text, labels, threshold=0.5)
 for entity in entities:
     print(entity["text"], "=>", entity["label"])

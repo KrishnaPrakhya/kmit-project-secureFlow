@@ -1,0 +1,21 @@
+# Existing dependencies
+Flask==3.0.0
+flask-cors==4.0.0
+certifi
+PyMuPDF
+opencv-python
+pytesseract
+google-generativeai
+gliner
+numpy
+Pillow
+
+# New dependencies for prompt-based redaction
+langchain==0.1.0
+langchain-google-genai==0.0.6
+pydantic==2.5.0
+python-dotenv==1.0.0
+
+# Optional: For better performance
+faiss-cpu==1.7.4
+tiktoken==0.5.2
