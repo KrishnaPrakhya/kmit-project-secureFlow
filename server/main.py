@@ -28,7 +28,7 @@ from prompt_redaction import (
 
 app = Flask(__name__)
 CORS(app)
-model = GLiNER.from_pretrained("knowledgator/gliner-multitask-large-v0.5")
+model = GLiNER.from_pretrained("knowledgator/gliner-x-base")
 UPLOAD_FOLDER = '../public'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
